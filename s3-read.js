@@ -69,32 +69,35 @@ function readObjects(prefix, startKey, contents) {
     });
 }
 
-let prefixes = [];
-for (let i = 0; i < 100; i++) {
+
+function replayWithPrefixes(prefixes) {
+    return Promise.map(prefixes, prefix => {
+        let continuationToken;
+        let startKey;
+        return listObjects(prefix, continuationToken)
+            .then((data) => {
+                logger.info('data.IsTruncated', data.IsTruncated);
+                continuationToken = data.IsTruncated ? data.NextContinuationToken : null;
+                if (data.KeyCount > 0) {
+                    return readObjects(prefix, data.StartAfter, data.Contents);
+                } else {
+                    return true;
+                }
+            })
+            .then(() => {
+                if (continuationToken) {
+                    return listObjects(prefix, continuationToken);
+                }
+            });
+    }, {concurrency: 10});
+}
+
+const prefixes = [];
+for (let i = 0; i < 10; i++) {
     prefixes.push(('000' + i.toString(16)).substr(-3));
-};
-
+}
 logger.info('prefixes', prefixes);
-
-Promise.map(prefixes, prefix => {
-    let continuationToken;
-    let startKey;
-    return listObjects(prefix, continuationToken)
-        .then((data) => {
-            logger.info('data.IsTruncated', data.IsTruncated);
-            continuationToken = data.IsTruncated ? data.NextContinuationToken : null;
-            if (data.KeyCount > 0) {
-                return readObjects(prefix, data.StartAfter, data.Contents);
-            } else {
-                return true;
-            }
-        })
-        .then(() => {
-            if (continuationToken) {
-                return listObjects(prefix, continuationToken);
-            }
-        });
-}, {concurrency: 10}).then(() => {
-    logger.info('completed');
-});
-
+replayWithPrefixes(prefixes)
+    .then(() => {
+        logger.info('completed');
+    });
